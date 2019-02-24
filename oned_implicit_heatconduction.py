@@ -537,16 +537,16 @@ def main(num_samples, vary_left_iso_bc = False, vary_diffusivity = False):
 
     #alpha low and high bounds for uniform random distirution
 
-    alpha_low = 5
-    alpha_high = 15;
+    alpha_low = 0
+    alpha_high = 10;
     if vary_diffusivity == True:
-        alpha = np.random.uniform(alpha_lwo, alpha_high, num_samples)
+        alpha = np.random.uniform(alpha_low, alpha_high, num_samples)
 
     labels[:,0] = alpha
 
     #isothermal temp left low and high bounds for uniform random distirution
-    temp_left_bc_low = 1000
-    temp_left_bc_high = 2000
+    temp_left_bc_low = 500
+    temp_left_bc_high = 3000
     if vary_left_iso_bc:
         temp_left_bc = np.random.uniform(temp_left_bc_low, temp_left_bc_high, num_samples)
 

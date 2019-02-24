@@ -12,16 +12,22 @@ from torch.autograd import Variable
 
 torch.manual_seed(0)
 
+#data generation parameters
+num_samples = 2000 #number of samples
+vary_left_iso_bc = False
+vary_diffusivity = True
+
+#parameters
 num_epochs = 100000
-num_classes = 1
-learning_rate = 0.0000001
+num_classes = 2
+learning_rate = 1
+
 
 test_case = False
-net_model = ''
+net_model = 'lin_reg'
 
-N = 200
-dataset = np.zeros((N,10,10), dtype=np.float64)
 if test_case == True:
+   dataset = np.zeros((N,10,10), dtype=np.float64)
    labels = np.arange(N, dtype = np.float32)
    labels = labels.reshape(len(labels),1)
 
@@ -40,36 +46,29 @@ if test_case == True:
       dataset = dataset.unsqueeze(1)
 
 else:
-   dataset, labels = oned_implicit_heatconduction.main()
-   # convert numpy array to pytorc tensor
+   dataset, labels = oned_implicit_heatconduction.main(num_samples, vary_left_iso_bc, vary_diffusivity)
+   # convert numpy array to pytorch tensor
    dataset = torch.tensor(dataset.astype(np.float32))
-   labels = labels.reshape(len(labels),1)
+   # labels = labels.reshape(len(labels),1)
    labels = torch.tensor(labels.astype(np.float32))
 
    dataset = dataset.permute(2,0,1)   #permute columns so 1st dimension is num_samples, 2nd is num_TCs, 3rd is num_tie_steps
    dataset = dataset.unsqueeze(1)  #add a dimension for channels
 
-
 #divide dataset into training and test
 #note we do not need to randomly extract from dataset since there is already randomness due
 #to how the data was generated
 
-if net_model is 'CNN':
-   num_samples, num_input_channels, num_time_steps, num_TCs = dataset.size()
-else:
-   num_samples = dataset.size()[0]
+num_samples, num_input_channels, num_time_steps, num_TCs = dataset.size()
 
-num_training_samples = round(0.75*num_samples)
+num_training_samples = round(0.75*num_samples)    #3:1 train:test split
 
 training_dataset = dataset[:num_training_samples]
 # training_dataset = dataset[:num_training_samples,:,:,:]
-# training_labels = labels[:num_training_samples]
 training_labels = labels[:num_training_samples]
 # test_dataset = dataset[num_training_samples:,:,:,:]
 # test_labels = labels[num_training_samples:]
 
-# sys.exit()
-# torch.Size([100, 1, 28, 28])
 
 #function for computing image width or height after convolving or pooling
 def calc_size(orig_size, filter_size, padding, stride, layer):
@@ -81,7 +80,7 @@ def calc_size(orig_size, filter_size, padding, stride, layer):
 
    return int(length)
 
-class ConvNet(nn.Module):
+class conv_net(nn.Module):
    def __init__(self):
       super().__init__()
 
@@ -127,7 +126,7 @@ class ConvNet(nn.Module):
 
       #specify 2 fully connected layers
       self.fc1 = nn.Linear(W * H * num_filters_2, 1000)
-      self.fc2 = nn.Linear(1000, 1)       #10 outputs for 10 digit classes
+      self.fc2 = nn.Linear(1000, num_classes)      
 
    def forward(self, data_to_propagate):       #analogous to virtual functions in C++, we're overriding the forward method in base class (nn.Module)
       out = self.layer1(data_to_propagate)
@@ -139,44 +138,36 @@ class ConvNet(nn.Module):
 
       return out
 
-class LinearRegressionModel(nn.Module):
+class lin_reg(nn.Module):
    def __init__(self):
       super().__init__()
 
-      # self.fc1 = nn.Linear(num_TCs * num_time_steps, 500)
-      self.fc1 = nn.Linear(80, 100)
-      self.fc2 = nn.Linear(100, 500)
-      self.fc3 = nn.Linear(500, 250)
-      self.fc4 = nn.Linear(250, 1)
+      self.fc1 = nn.Linear(num_TCs * num_time_steps, 500)
+      self.fc2 = nn.Linear(500, 100)
+      self.fc3 = nn.Linear(100, num_classes)
 
    def forward(self, x):       #analogous to virtual functions in C++, we're overriding the forward method in base class (nn.Module)
       # a,b,c,d = x.size()
       # print(a,b,c,d)
-      out = x.reshape(num_training_samples, 80)       
+      out = x.reshape(num_training_samples, num_TCs * num_time_steps)       
       
       out = F.relu(self.fc1(out))
       out = F.relu(self.fc2(out))
-      out = F.relu(self.fc3(out))
-      # out = F.relu(self.fc4(out))
-      # out = self.fc1(out)
-      # out = self.fc2(out)
-      # out = self.fc3(out)
-      out = self.fc4(out)
+      out = self.fc3(out)
 
       return out
 
-#create ConvNet instance
-if net_model is not 'CNN':
-   print("Using Plain Neural Network Model")
-   model = LinearRegressionModel()
+#create conv_net instance
+if net_model is 'CNN':
+   model = conv_net()
 else:
-   print("Using CNN Model")
-   model = ConvNet()
+   model = lin_reg()
 
+print("Using", net_model, "Model")
 
 #Loss and optimizer
 cost_func = nn.MSELoss()      #this contains both cross entropy and softmax
-optimizer = torch.optim.SGD(model.parameters(), lr = learning_rate)#, weight_decay = 1e-5)
+optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)#, weight_decay = 1e-5)
 
 #training stage
 loss_list = []
@@ -184,14 +175,7 @@ mse_list = []
 epoch_list = []
 
 for epoch in range(num_epochs):
-   # print(training_dataset.size())
-   # sys.exit()
    outputs = model(training_dataset)
-   # print(outputs)
-
-   # outputs = outputs.reshape(outputs.numel())
-   # print(outputs.size())
-   # print(training_labels.size())
    loss = cost_func(outputs, training_labels)
 
    #backpropagation and optimization
