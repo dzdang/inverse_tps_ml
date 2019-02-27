@@ -20,7 +20,7 @@ vary_left_iso_bc = False
 vary_diffusivity = True
 
 #parameters
-num_epochs = 1000000
+num_epochs = 10000000
 num_classes = 1
 learning_rate = 0.00000001   
 
@@ -141,22 +141,36 @@ class conv_net(nn.Module):
       return out
 
 class lin_reg(nn.Module):
+
    def __init__(self):
       super().__init__()
+      self.num_layers = 3
+      num_nodes_per_layer = [200, 100, num_classes]
+
+      self.fc = nn.ModuleList([nn.Linear(num_TCs * num_time_steps, num_nodes_per_layer[0])])
+      for i in range(1, self.num_layers):
+         self.fc.append(nn.Linear(num_nodes_per_layer[i - 1], num_nodes_per_layer[i]))
+
       #hyperparameters
-      num_layers_1 = 200
-      num_layers_2 = 100
+      # num_layers_1 = 200
+      # num_layers_2 = 100
 
-      self.fc1 = nn.Linear(num_TCs * num_time_steps, num_layers_1)
-      self.fc2 = nn.Linear(num_layers_1, num_layers_2)
-      self.fc3 = nn.Linear(num_layers_2, num_classes)
+      # self.fc1 = nn.Linear(num_TCs * num_time_steps, num_layers_1)
+      # self.fc2 = nn.Linear(num_layers_1, num_layers_2)
+      # self.fc3 = nn.Linear(num_layers_2, num_classes)
 
-   def forward(self, x):       #analogous to virtual functions in C++, we're overriding the forward method in base class (nn.Module)
-      out = x.reshape(num_training_samples, num_TCs * num_time_steps)       
-      out = F.relu(self.fc1(out))
-      out = F.relu(self.fc2(out))
-      out = self.fc3(out)
+   def forward(self, x, num_samples):       #analogous to virtual functions in C++, we're overriding the forward method in base class (nn.Module)
+      out = x.reshape(num_samples, num_TCs * num_time_steps)
 
+      for i in range(self.num_layers - 1):      
+         out = F.relu(self.fc[i](out))
+
+      i = i + 1    #python doesn't increment i at end of loop
+      out = self.fc[i](out)
+
+      # out = F.relu(self.fc1(out))
+      # out = F.relu(self.fc2(out))
+      # out = self.fc3(out)
       return out
 
 #create conv_net instance
@@ -178,7 +192,6 @@ if is_cuda:
    model = model.to(device = cuda)
 
 print("CUDA IS:",  is_cuda)
-
 print("Using", net_model, "Model")
 
 #Loss and optimizer
@@ -187,14 +200,13 @@ cost_func = nn.MSELoss()      #this contains both cross entropy and softmax
 #we can set a momentum value between (0,1) to get past local minima
 optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)#, weight_decay = 1e-5)
 
-
 #training stage
 loss_list = []
 mse_list = []
 epoch_list = []
 
 for epoch in range(num_epochs):
-   outputs = model(training_dataset)
+   outputs = model(training_dataset, num_training_samples)
    loss = cost_func(outputs, training_labels)
 
    #backpropagation and optimization
@@ -211,10 +223,11 @@ for epoch in range(num_epochs):
    epoch_list.append(epoch)
    print("Epoch: {} | MSE: {}".format(epoch, loss))
 
-#evaluate on test data
-plt.plot(epoch_list,loss_list)
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.show()
+#plot loss vs epoch
+fig = plt.figure()
+ax = plt.gca()
+ax.plot(epoch_list, loss_list, 'o', c='blue', alpha=0.05, markeredgecolor='none')
+ax.set_yscale('log')
 
-predicted = model(training_dataset).data.numpy()
+#evaluate on test data
+predicted = model(test_dataset, num_samples - num_training_samples).data.numpy()
