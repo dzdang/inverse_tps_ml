@@ -13,19 +13,25 @@ import matplotlib.pyplot as plt
 
 torch.manual_seed(0)
 
-
 #data generation parameters
 num_samples = 2000 #number of samples
-vary_left_iso_bc = False
-vary_diffusivity = True
+vary_left_iso_bc = True
+vary_diffusivity = False
+
+print("Total number of samples: {}".format(num_samples))
+print("Vary left isothermal BC: {}, Vary thermal diffusivity: {}".format(vary_left_iso_bc,vary_diffusivity))
 
 #parameters
-num_epochs = 10000000
+num_epochs = 1000000
 num_classes = 1
 learning_rate = 0.00000001   
 
+print("Number of epochs: {}".format(num_epochs))
+print("Number of classes: {}".format(num_classes))
+print("Learning rate: {}".format(learning_rate))
+
 test_case = False
-net_model = 'lin_reg'
+net_model = 'MLP'
 
 if test_case == True:
    dataset = np.zeros((N,10,10), dtype=np.float64)
@@ -82,7 +88,7 @@ def calc_size(orig_size, filter_size, padding, stride, layer):
 
    return int(length)
 
-class conv_net(nn.Module):
+class CNN(nn.Module):
    def __init__(self):
       super().__init__()
 
@@ -140,7 +146,7 @@ class conv_net(nn.Module):
 
       return out
 
-class lin_reg(nn.Module):
+class MLP(nn.Module):
 
    def __init__(self):
       super().__init__()
@@ -173,12 +179,11 @@ class lin_reg(nn.Module):
       # out = self.fc3(out)
       return out
 
-#create conv_net instance
+#create CNN instance
 if net_model is 'CNN':
-   model = conv_net()
+   model = CNN()
 else:
-   model = lin_reg()
-
+   model = MLP()
 
 #check if cuda is enabled and transfer dataset to GPU if cuda is enabled
 is_cuda = torch.cuda.is_available()
@@ -188,11 +193,10 @@ if is_cuda:
    training_dataset = training_dataset.to(device = cuda)
    training_labels = training_labels.to(device = cuda)
    test_dataset = test_dataset.to(device = cuda)
-   test_labels = test_labels.to(device = cuda)
    model = model.to(device = cuda)
 
 print("CUDA IS:",  is_cuda)
-print("Using", net_model, "Model")
+print("Using", net_model, "architecture")
 
 #Loss and optimizer
 cost_func = nn.MSELoss()      #this contains both cross entropy and softmax
@@ -230,4 +234,18 @@ ax.plot(epoch_list, loss_list, 'o', c='blue', alpha=0.05, markeredgecolor='none'
 ax.set_yscale('log')
 
 #evaluate on test data
-predicted = model(test_dataset, num_samples - num_training_samples).data.numpy()
+predicted = model(test_dataset, num_samples - num_training_samples)
+predicted = predicted.cpu()
+
+MSE_test = [None]*num_classes
+for i in range(num_classes):
+   MSE_test[i] = cost_func(predicted[:,i], test_labels[:,i])
+
+test_labels = test_labels.numpy()
+predicted = predicted.cpu().data.numpy()
+
+plt.figure(2)
+plt.scatter(test_labels, predicted, s=5)
+plt.xlabel('Exact Thermal Conductivity')
+plt.ylabel('Predicted Thermal Conductivity')
+plt.savefig('predicted_labels_vs_exact.png')
